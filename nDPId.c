@@ -2189,8 +2189,8 @@ static void jsonize_l2(struct nDPId_workflow * const workflow, struct nDPId_flow
 {
     ndpi_serializer * const serializer = &workflow->ndpi_serializer;
     size_t len = MACADDR_STRLEN;
-    char h_dest[len] = {};
-    char h_source[len] = {};
+    char h_dest[MACADDR_STRLEN] = {};
+    char h_source[MACADDR_STRLEN] = {};
 
     fill_up_mac_address(h_dest, flow_basic->h_dest, len);
     ndpi_serialize_string_string(serializer, "dst_mac", h_dest);
