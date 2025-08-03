@@ -40,6 +40,10 @@
 #endif
 #include "utils.h"
 
+#ifndef MACADDR_STRLEN
+#define MACADDR_STRLEN 24
+#endif
+
 #ifndef ETHERTYPE_DCE
 #define ETHERTYPE_DCE 0x8903
 #endif
@@ -193,6 +197,8 @@ struct nDPId_flow_basic
     uint16_t src_port;
     uint16_t dst_port;
     uint64_t last_pkt_time[FD_COUNT];
+    u_char h_dest[6];
+    u_char h_source[6];
 };
 
 /*
@@ -2170,6 +2176,29 @@ static void check_for_flow_updates(struct nDPId_reader_thread * const reader_thr
     }
 }
 
+static void fill_up_mac_address(char * buffer, const u_char * source, size_t buffer_len)
+{
+    snprintf(buffer, buffer_len - 1,
+             "%02x:%02x:%02x:%02x:%02x:%02x",
+             source[0], source[1], source[2],
+             source[3], source[4], source[5]);
+    buffer[buffer_len] = '\0';
+}
+
+static void jsonize_l2(struct nDPId_workflow * const workflow, struct nDPId_flow_basic const * const flow_basic)
+{
+    ndpi_serializer * const serializer = &workflow->ndpi_serializer;
+    size_t len = MACADDR_STRLEN;
+    char h_dest[len] = {};
+    char h_source[len] = {};
+
+    fill_up_mac_address(h_dest, flow_basic->h_dest, len);
+    ndpi_serialize_string_string(serializer, "dst_mac", h_dest);
+
+    fill_up_mac_address(h_source, flow_basic->h_source, len);
+    ndpi_serialize_string_string(serializer, "src_mac", h_source);
+}
+
 static void jsonize_l3_l4(struct nDPId_workflow * const workflow, struct nDPId_flow_basic const * const flow_basic)
 {
     ndpi_serializer * const serializer = &workflow->ndpi_serializer;
@@ -2991,6 +3020,7 @@ static void jsonize_flow_event(struct nDPId_reader_thread * const reader_thread,
     }
     jsonize_basic(reader_thread, 1);
     jsonize_flow(workflow, flow_ext);
+    jsonize_l2(workflow, &flow_ext->flow_basic);
     jsonize_l3_l4(workflow, &flow_ext->flow_basic);
 
     switch (event)
@@ -4070,6 +4100,16 @@ static void ndpi_process_packet(uint8_t * const args,
     if (process_datalink_layer(reader_thread, header, packet, &ip_offset, &type, &flow_basic.vlan_id) != 0)
     {
         return;
+    }
+
+    /* Fill up flow_basic with MAC addresses */
+    size_t bytes = 6;
+    uint16_t eth_offset = 0;
+    struct ndpi_ethhdr * eth_hdr = (struct ndpi_ethhdr *)&packet[eth_offset];
+    for (size_t i = 0; i <= bytes; ++i)
+    {
+        flow_basic.h_dest[i] = eth_hdr->h_dest[i];
+        flow_basic.h_source[i] = eth_hdr->h_source[i];
     }
 
 process_layer3_again:
