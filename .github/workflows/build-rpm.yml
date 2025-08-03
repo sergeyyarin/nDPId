@@ -43,3 +43,9 @@ jobs:
       with:
         name: nDPId-rpm-packages
         path: build-rpm/*.rpm
+
+    - name: Upload DEB
+      uses: actions/upload-artifact@v4
+      with:
+        name: nDPId-deb-packages
+        path: build-rpm/*.deb
