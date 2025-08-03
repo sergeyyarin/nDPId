@@ -2182,7 +2182,7 @@ static void fill_up_mac_address(char * buffer, const u_char * source, size_t buf
              "%02x:%02x:%02x:%02x:%02x:%02x",
              source[0], source[1], source[2],
              source[3], source[4], source[5]);
-    buffer[buffer_len] = '\0';
+    buffer[buffer_len - 1] = '\0';
 }
 
 static void jsonize_l2(struct nDPId_workflow * const workflow, struct nDPId_flow_basic const * const flow_basic)
@@ -4106,7 +4106,7 @@ static void ndpi_process_packet(uint8_t * const args,
     size_t bytes = 6;
     uint16_t eth_offset = 0;
     struct ndpi_ethhdr * eth_hdr = (struct ndpi_ethhdr *)&packet[eth_offset];
-    for (size_t i = 0; i <= bytes; ++i)
+    for (size_t i = 0; i < bytes; ++i)
     {
         flow_basic.h_dest[i] = eth_hdr->h_dest[i];
         flow_basic.h_source[i] = eth_hdr->h_source[i];
