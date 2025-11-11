@@ -3141,6 +3141,7 @@ static void jsonize_flow_detection_event(struct nDPId_reader_thread * const read
     }
     jsonize_basic(reader_thread, 1);
     jsonize_flow(workflow, &flow->flow_extended);
+    jsonize_l2(workflow, &flow->flow_extended.flow_basic);
     jsonize_l3_l4(workflow, &flow->flow_extended.flow_basic);
 
     switch (event)
