@@ -15,7 +15,8 @@ if("${PROJECT_SOURCE_DIR}" STREQUAL "${PROJECT_BINARY_DIR}")
                         "Please remove ${PROJECT_SOURCE_DIR}/CMakeCache.txt\n"
                         "and\n"
                         "${PROJECT_SOURCE_DIR}/CMakeFiles\n"
-                        "Create a build directory somewhere and run CMake again.")
+                        "Create a build directory somewhere and run CMake again.\n"
+                        "Or run: 'cmake -S ${PROJECT_SOURCE_DIR} -B ./your-custom-build-dir [CMAKE-OPTIONS]'")
 endif()
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 find_package(PkgConfig REQUIRED)
@@ -93,6 +94,7 @@ option(ENABLE_SANITIZER_THREAD "Enable TSAN (does not work together with ASAN)."
 option(ENABLE_MEMORY_PROFILING "Enable dynamic memory tracking." OFF)
 option(ENABLE_ZLIB "Enable zlib support for nDPId (experimental)." OFF)
 option(ENABLE_SYSTEMD "Install systemd components." OFF)
+option(ENABLE_CRYPTO "Enable OpenSSL cryptographic support in nDPId/nDPIsrvd." OFF)
 option(BUILD_EXAMPLES "Build C examples." ON)
 option(BUILD_RUST_EXAMPLES "Build Rust examples." OFF)
 if(BUILD_EXAMPLES)
@@ -197,9 +199,12 @@ endif()
 if(ENABLE_PFRING)
     set(NDPID_PFRING_SRCS npfring.c)
 endif()
-add_executable(nDPId nDPId.c ${NDPID_PFRING_SRCS} nio.c utils.c)
+if(ENABLE_CRYPTO)
+    set(CRYPTO_SRCS ncrypt.c)
+endif()
+add_executable(nDPId nDPId.c ${NDPID_PFRING_SRCS} ${CRYPTO_SRCS} nio.c utils.c)
 add_executable(nDPIsrvd nDPIsrvd.c nio.c utils.c)
-add_executable(nDPId-test nDPId-test.c ${NDPID_PFRING_SRCS})
+add_executable(nDPId-test nDPId-test.c ${NDPID_PFRING_SRCS} ${CRYPTO_SRCS})
 
 add_custom_target(umask_check)
 add_custom_command(
@@ -258,13 +263,15 @@ if(ENABLE_COVERAGE)
     add_custom_command(
         TARGET coverage-clean
         COMMAND find "${CMAKE_BINARY_DIR}" "${CMAKE_SOURCE_DIR}/libnDPI" -name "*.gcda" -delete
+        POST_BUILD
     )
     add_custom_target(coverage-view)
     add_custom_command(
         TARGET  coverage-view
         COMMAND cd "${CMAKE_BINARY_DIR}/coverage_report" && python3 -m http.server
-        DEPENDS "${CMAKE_BINARY_DIR}/coverage_report/nDPId/index.html"
+        POST_BUILD
     )
+    add_dependencies(coverage-view coverage)
 endif()
 if(ENABLE_SANITIZER)
     # TODO: Check for `-fsanitize-memory-track-origins` and add if available?
@@ -385,6 +392,12 @@ if(BUILD_NDPI)
     add_dependencies(nDPId-test libnDPI)
 endif()
 
+if(ENABLE_CRYPTO)
+    find_package(OpenSSL REQUIRED)
+    set(OSSL_DEFS "-DENABLE_CRYPTO=1")
+    set(OSSL_LIBRARY "${OPENSSL_SSL_LIBRARY}" "${OPENSSL_CRYPTO_LIBRARY}")
+endif()
+
 if(STATIC_LIBNDPI_INSTALLDIR OR BUILD_NDPI OR NDPI_NO_PKGCONFIG)
     if(NDPI_WITH_GCRYPT)
         find_package(GCRYPT "1.4.2" REQUIRED)
@@ -448,25 +461,26 @@ if(NOT pkgcfg_lib_PCAP_pcap)
 endif()
 
 target_compile_options(nDPId PRIVATE "-pthread")
-target_compile_definitions(nDPId PRIVATE -D_GNU_SOURCE=1 -DPKG_VERSION=\"${PKG_VERSION}\" -DGIT_VERSION=\"${GIT_VERSION}\" ${NDPID_DEFS} ${EPOLL_DEFS} ${ZLIB_DEFS} ${PFRING_DEFS})
+target_compile_definitions(nDPId PRIVATE -D_GNU_SOURCE=1 -DPKG_VERSION=\"${PKG_VERSION}\" -DGIT_VERSION=\"${GIT_VERSION}\"
+                                         ${NDPID_DEFS} ${EPOLL_DEFS} ${ZLIB_DEFS} ${PFRING_DEFS} ${OSSL_DEFS})
 target_include_directories(nDPId PRIVATE "${STATIC_LIBNDPI_INC}" "${DEFAULT_NDPI_INCLUDE}" ${NDPID_DEPS_INC} ${PFRING_KERNEL_INC} ${PFRING_INC})
 target_link_libraries(nDPId "${STATIC_LIBNDPI_LIB}" "${STATIC_PFRING_LIB}" "${pkgcfg_lib_PCAP_pcap}" "${pkgcfg_lib_NDPI_ndpi}"
                             "${pkgcfg_lib_PCRE_pcre2-8}" "${pkgcfg_lib_MAXMINDDB_maxminddb}" "${pkgcfg_lib_ZLIB_z}"
                             "${GCRYPT_LIBRARY}" "${GCRYPT_ERROR_LIBRARY}" "${PCAP_LIBRARY}" "${LIBM_LIB}" "${PF_RING_LIB}"
-                            "-pthread")
+                            "${OSSL_LIBRARY}" "-pthread")
 
 target_compile_definitions(nDPIsrvd PRIVATE -D_GNU_SOURCE=1 -DPKG_VERSION=\"${PKG_VERSION}\" -DGIT_VERSION=\"${GIT_VERSION}\" ${NDPID_DEFS} ${EPOLL_DEFS})
 target_include_directories(nDPIsrvd PRIVATE ${NDPID_DEPS_INC})
 
 target_compile_options(nDPId-test PRIVATE "-Wno-unused-function" "-pthread")
 target_compile_definitions(nDPId-test PRIVATE -D_GNU_SOURCE=1 -DNO_MAIN=1 -DPKG_VERSION=\"${PKG_VERSION}\" -DGIT_VERSION=\"${GIT_VERSION}\"
-                                              ${NDPID_DEFS} ${EPOLL_DEFS} ${ZLIB_DEFS} ${PFRING_DEFS} ${NDPID_TEST_MPROF_DEFS})
+                                              ${NDPID_DEFS} ${EPOLL_DEFS} ${ZLIB_DEFS} ${PFRING_DEFS} ${OSSL_DEFS} ${NDPID_TEST_MPROF_DEFS})
 target_include_directories(nDPId-test PRIVATE
                            "${STATIC_LIBNDPI_INC}" "${DEFAULT_NDPI_INCLUDE}" ${NDPID_DEPS_INC} ${PFRING_KERNEL_INC} ${PFRING_INC})
 target_link_libraries(nDPId-test "${STATIC_LIBNDPI_LIB}" "${STATIC_PFRING_LIB}" "${pkgcfg_lib_PCAP_pcap}" "${pkgcfg_lib_NDPI_ndpi}"
                                  "${pkgcfg_lib_PCRE_pcre2-8}" "${pkgcfg_lib_MAXMINDDB_maxminddb}" "${pkgcfg_lib_ZLIB_z}"
                                  "${GCRYPT_LIBRARY}" "${GCRYPT_ERROR_LIBRARY}" "${PCAP_LIBRARY}" "${LIBM_LIB}" "${PF_RING_LIB}"
-                                 "-pthread")
+                                 "${OSSL_LIBRARY}" "-pthread")
 
 if(CMAKE_C_COMPILER_ID STREQUAL "Clang")
     add_executable(fuzz_ndpi_process_packet test/fuzz_ndpi_process_packet.c)
@@ -592,13 +606,10 @@ install(FILES config.h
 install(TARGETS nDPId DESTINATION sbin)
 install(TARGETS nDPIsrvd nDPId-test DESTINATION bin)
 if(BUILD_EXAMPLES)
-    install(FILES dependencies/nDPIsrvd.py examples/py-flow-dashboard/plotly_dash.py
+    install(FILES dependencies/nDPIsrvd.py
             DESTINATION share/nDPId)
     install(FILES examples/py-flow-info/flow-info.py
             DESTINATION bin RENAME nDPIsrvd-flow-info.py
-            PERMISSIONS OWNER_READ OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
-    install(FILES examples/py-flow-dashboard/flow-dash.py
-            DESTINATION bin RENAME nDPIsrvd-flow-dash.py
             PERMISSIONS OWNER_READ OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
     install(FILES examples/py-json-stdout/json-stdout.py
             DESTINATION bin RENAME nDPIsrvd-json-stdout.py
@@ -627,6 +638,7 @@ message(STATUS "ENABLE_PFRING............: ${ENABLE_PFRING}")
 if(ENABLE_PFRING)
 message(STATUS "PFRING_LINK_STATIC.......: ${PFRING_LINK_STATIC}")
 endif()
+message(STATUS "ENABLE_CRYPTO............: ${ENABLE_CRYPTO}")
 message(STATUS "ENABLE_COVERAGE..........: ${ENABLE_COVERAGE}")
 message(STATUS "ENABLE_SANITIZER.........: ${ENABLE_SANITIZER}")
 message(STATUS "ENABLE_SANITIZER_THREAD..: ${ENABLE_SANITIZER_THREAD}")

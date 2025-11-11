@@ -67,12 +67,12 @@
         },
         "ndpi_api_version": {
             "type": "number",
-            "minimum": 11500
+            "minimum": 0
         },
         "size_per_flow": {
             "type": "number",
             "minimum": 1384,
-            "maximum": 1400
+            "maximum": 1500
         },
 
         "max-flows-per-thread": {
